@@ -19,12 +19,12 @@
 
 #include <iterator>
 
-static GLuint g_FontTexture  = 0;
-static int    g_ShaderHandle = 0, g_VertHandle = 0, g_FragHandle = 0;
-static int    g_AttribLocationTex = 0, g_AttribLocationProjMtx = 0;
-static int    g_AttribLocationPosition = 0, g_AttribLocationUV = 0,
-           g_AttribLocationColor = 0;
-static unsigned int g_VboHandle = 0, g_VaoHandle = 0, g_ElementsHandle = 0;
+// static GLuint g_FontTexture  = 0;
+// static int    g_ShaderHandle = 0, g_VertHandle = 0, g_FragHandle = 0;
+// static int    g_AttribLocationTex = 0, g_AttribLocationProjMtx = 0;
+// static int    g_AttribLocationPosition = 0, g_AttribLocationUV = 0,
+//            g_AttribLocationColor = 0;
+// static unsigned int g_VboHandle = 0, g_VaoHandle = 0, g_ElementsHandle = 0;
 
 //////////////////////////////////////////////////////////////////////////////
 // Imporant Note: Dear ImGui expects the control Keys indices not to be	    //
@@ -105,9 +105,31 @@ ImGUIEventHandler::ImGUIEventHandler()
   : time(0.0)
   , mousePressed{false, false, false}
   , mouseWheel(0.0)
-  , fontTexture(0)
   , initialized(false)
 {
+}
+
+ImGUIEventHandler::~ImGUIEventHandler()
+{
+  if (initialized) {
+    osg::GLExtensions* extensions = osg::GLExtensions::Get(contextID, false);
+    assert(extensions);
+
+    extensions->glDeleteVertexArrays(1, &VaoHandle);
+    extensions->glDeleteBuffers(1, &VboHandle);
+    extensions->glDeleteBuffers(1, &ElementsHandle);
+
+    extensions->glDetachShader(ShaderHandle, VertHandle);
+    extensions->glDeleteShader(VertHandle);
+
+    extensions->glDetachShader(ShaderHandle, FragHandle);
+    extensions->glDeleteShader(FragHandle);
+
+    extensions->glDeleteProgram(ShaderHandle);
+
+    glDeleteTextures(1, &FontTexture);
+    ImGui::GetIO().Fonts->TexID = 0;
+  }
 }
 
 void
@@ -150,6 +172,78 @@ ImGUIEventHandler::newFrame(osg::RenderInfo& renderInfo)
   // TODO: Remove:
   bool show_test_window = true;
   ImGui::ShowTestWindow(&show_test_window);
+}
+
+void
+ImGUIEventHandler::render(osg::RenderInfo& renderInfo)
+{
+  ImGui::Render();
+  ImDrawData* draw_data = ImGui::GetDrawData();
+
+  osg::State&        state      = *renderInfo.getState();
+  osg::GLExtensions* extensions = state.get<osg::GLExtensions>();
+
+  ImGuiIO& io        = ImGui::GetIO();
+  int      fb_width  = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
+  int      fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
+  if (fb_width == 0 || fb_height == 0) return;
+  draw_data->ScaleClipRects(io.DisplayFramebufferScale);
+  // Setup render state: alpha-blending enabled, no face culling, no depth
+  // testing, scissor enabled
+  glEnable(GL_BLEND);
+  glBlendEquation(GL_FUNC_ADD);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDisable(GL_CULL_FACE);
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_SCISSOR_TEST);
+
+  // Setup viewport, orthographic projection matrix
+  glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
+  const float ortho_projection[4][4] = {
+    {2.0f / io.DisplaySize.x, 0.0f, 0.0f, 0.0f},
+    {0.0f, 2.0f / -io.DisplaySize.y, 0.0f, 0.0f},
+    {0.0f, 0.0f, -1.0f, 0.0f},
+    {-1.0f, 1.0f, 0.0f, 1.0f},
+  };
+  extensions->glUseProgram(ShaderHandle);
+  extensions->glUniform1i(AttribLocationTex, 0);
+  extensions->glUniformMatrix4fv(AttribLocationProjMtx, 1, GL_FALSE,
+                                 &ortho_projection[0][0]);
+  extensions->glBindVertexArray(VaoHandle);
+
+  for (int n = 0; n < draw_data->CmdListsCount; n++) {
+    const ImDrawList* cmd_list          = draw_data->CmdLists[n];
+    const ImDrawIdx*  idx_buffer_offset = 0;
+
+    extensions->glBindBuffer(GL_ARRAY_BUFFER, VboHandle);
+    extensions->glBufferData(
+      GL_ARRAY_BUFFER,
+      (GLsizeiptr)cmd_list->VtxBuffer.Size * sizeof(ImDrawVert),
+      (const GLvoid*)cmd_list->VtxBuffer.Data, GL_STREAM_DRAW);
+
+    extensions->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ElementsHandle);
+    extensions->glBufferData(
+      GL_ELEMENT_ARRAY_BUFFER,
+      (GLsizeiptr)cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx),
+      (const GLvoid*)cmd_list->IdxBuffer.Data, GL_STREAM_DRAW);
+
+    for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++) {
+      const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+      if (pcmd->UserCallback) {
+        pcmd->UserCallback(cmd_list, pcmd);
+      } else {
+        glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
+        glScissor((int)pcmd->ClipRect.x, (int)(fb_height - pcmd->ClipRect.w),
+                  (int)(pcmd->ClipRect.z - pcmd->ClipRect.x),
+                  (int)(pcmd->ClipRect.w - pcmd->ClipRect.y));
+        glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount,
+                       sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT
+                                              : GL_UNSIGNED_INT,
+                       idx_buffer_offset);
+      }
+      idx_buffer_offset += pcmd->ElemCount;
+    }
+  }
 }
 
 bool
@@ -300,7 +394,8 @@ ImGUIEventHandler::initialize(osg::RenderInfo& renderInfo)
 
   osg::State&        state      = *renderInfo.getState();
   osg::GLExtensions* extensions = state.get<osg::GLExtensions>();
-// Make sure to build with a recent osg
+  // Make sure to build with a recent osg
+  contextID = renderInfo.getContextID();
 
 #if 0 // OSG version
   osg::ref_ptr<osg::Shader> vertShader =
@@ -316,54 +411,52 @@ ImGUIEventHandler::initialize(osg::RenderInfo& renderInfo)
   program->addBindAttribLocation("Color", 2);
 
 #else
-  g_ShaderHandle = extensions->glCreateProgram();
-  g_VertHandle   = extensions->glCreateShader(GL_VERTEX_SHADER);
-  g_FragHandle   = extensions->glCreateShader(GL_FRAGMENT_SHADER);
-  extensions->glShaderSource(g_VertHandle, 1, &vertex_shader, 0);
-  extensions->glShaderSource(g_FragHandle, 1, &fragment_shader, 0);
-  extensions->glCompileShader(g_VertHandle);
-  checkShader(g_VertHandle, extensions);
-  extensions->glCompileShader(g_FragHandle);
-  checkShader(g_FragHandle, extensions);
-  extensions->glAttachShader(g_ShaderHandle, g_VertHandle);
-  extensions->glAttachShader(g_ShaderHandle, g_FragHandle);
+  ShaderHandle = extensions->glCreateProgram();
+  VertHandle   = extensions->glCreateShader(GL_VERTEX_SHADER);
+  FragHandle   = extensions->glCreateShader(GL_FRAGMENT_SHADER);
+  extensions->glShaderSource(VertHandle, 1, &vertex_shader, 0);
+  extensions->glShaderSource(FragHandle, 1, &fragment_shader, 0);
+  extensions->glCompileShader(VertHandle);
+  checkShader(VertHandle, extensions);
+  extensions->glCompileShader(FragHandle);
+  checkShader(FragHandle, extensions);
+  extensions->glAttachShader(ShaderHandle, VertHandle);
+  extensions->glAttachShader(ShaderHandle, FragHandle);
 
-  extensions->glBindAttribLocation(g_ShaderHandle, 0, "Position");
-  extensions->glBindAttribLocation(g_ShaderHandle, 1, "UV");
-  extensions->glBindAttribLocation(g_ShaderHandle, 2, "Color");
+  extensions->glBindAttribLocation(ShaderHandle, 0, "Position");
+  extensions->glBindAttribLocation(ShaderHandle, 1, "UV");
+  extensions->glBindAttribLocation(ShaderHandle, 2, "Color");
 
-  extensions->glLinkProgram(g_ShaderHandle);
+  extensions->glLinkProgram(ShaderHandle);
 
-  g_AttribLocationTex =
-    extensions->glGetUniformLocation(g_ShaderHandle, "Texture");
-  g_AttribLocationProjMtx =
-    extensions->glGetUniformLocation(g_ShaderHandle, "ProjMtx");
-  g_AttribLocationPosition =
-    extensions->glGetAttribLocation(g_ShaderHandle, "Position");
-  g_AttribLocationUV = extensions->glGetAttribLocation(g_ShaderHandle, "UV");
-  g_AttribLocationColor =
-    extensions->glGetAttribLocation(g_ShaderHandle, "Color");
+  AttribLocationTex = extensions->glGetUniformLocation(ShaderHandle, "Texture");
+  AttribLocationProjMtx =
+    extensions->glGetUniformLocation(ShaderHandle, "ProjMtx");
+  AttribLocationPosition =
+    extensions->glGetAttribLocation(ShaderHandle, "Position");
+  AttribLocationUV    = extensions->glGetAttribLocation(ShaderHandle, "UV");
+  AttribLocationColor = extensions->glGetAttribLocation(ShaderHandle, "Color");
 
 #endif
 
-  extensions->glGenBuffers(1, &g_VboHandle);
-  extensions->glGenBuffers(1, &g_ElementsHandle);
+  extensions->glGenBuffers(1, &VboHandle);
+  extensions->glGenBuffers(1, &ElementsHandle);
 
-  extensions->glGenVertexArrays(1, &g_VaoHandle);
-  extensions->glBindVertexArray(g_VaoHandle);
-  extensions->glBindBuffer(GL_ARRAY_BUFFER, g_VboHandle);
-  extensions->glEnableVertexAttribArray(g_AttribLocationPosition);
-  extensions->glEnableVertexAttribArray(g_AttribLocationUV);
-  extensions->glEnableVertexAttribArray(g_AttribLocationColor);
+  extensions->glGenVertexArrays(1, &VaoHandle);
+  extensions->glBindVertexArray(VaoHandle);
+  extensions->glBindBuffer(GL_ARRAY_BUFFER, VboHandle);
+  extensions->glEnableVertexAttribArray(AttribLocationPosition);
+  extensions->glEnableVertexAttribArray(AttribLocationUV);
+  extensions->glEnableVertexAttribArray(AttribLocationColor);
 
 #define OFFSETOF(TYPE, ELEMENT) ((size_t) & (((TYPE*)0)->ELEMENT))
-  extensions->glVertexAttribPointer(g_AttribLocationPosition, 2, GL_FLOAT,
+  extensions->glVertexAttribPointer(AttribLocationPosition, 2, GL_FLOAT,
                                     GL_FALSE, sizeof(ImDrawVert),
                                     (GLvoid*)OFFSETOF(ImDrawVert, pos));
-  extensions->glVertexAttribPointer(g_AttribLocationUV, 2, GL_FLOAT, GL_FALSE,
+  extensions->glVertexAttribPointer(AttribLocationUV, 2, GL_FLOAT, GL_FALSE,
                                     sizeof(ImDrawVert),
                                     (GLvoid*)OFFSETOF(ImDrawVert, uv));
-  extensions->glVertexAttribPointer(g_AttribLocationColor, 4, GL_UNSIGNED_BYTE,
+  extensions->glVertexAttribPointer(AttribLocationColor, 4, GL_UNSIGNED_BYTE,
                                     GL_TRUE, sizeof(ImDrawVert),
                                     (GLvoid*)OFFSETOF(ImDrawVert, col));
 #undef OFFSETOF
@@ -381,15 +474,15 @@ ImGUIEventHandler::initialize(osg::RenderInfo& renderInfo)
               // calling GetTexDataAsAlpha8() instead to save on GPU memory.
 
   // Upload texture to graphics system
-  glGenTextures(1, &g_FontTexture);
-  glBindTexture(GL_TEXTURE_2D, g_FontTexture);
+  glGenTextures(1, &FontTexture);
+  glBindTexture(GL_TEXTURE_2D, FontTexture);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
                GL_UNSIGNED_BYTE, pixels);
 
   // Store our identifier
-  io.Fonts->TexID = (void*)(intptr_t)g_FontTexture;
+  io.Fonts->TexID = (void*)(intptr_t)FontTexture;
 
   // Keyboard mapping. ImGui will use those indices to peek into the
   // io.KeyDown[] array.
@@ -419,289 +512,5 @@ ImGUIEventHandler::initialize(osg::RenderInfo& renderInfo)
 void
 ImGUIRender::operator()(osg::RenderInfo& renderInfo) const
 {
-  ImGui::Render();
-  ImDrawData* draw_data = ImGui::GetDrawData();
-
-  osg::State&        state      = *renderInfo.getState();
-  osg::GLExtensions* extensions = state.get<osg::GLExtensions>();
-
-  ImGuiIO& io        = ImGui::GetIO();
-  int      fb_width  = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
-  int      fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
-  if (fb_width == 0 || fb_height == 0) return;
-  draw_data->ScaleClipRects(io.DisplayFramebufferScale);
-  // Setup render state: alpha-blending enabled, no face culling, no depth
-  // testing, scissor enabled
-  glEnable(GL_BLEND);
-  glBlendEquation(GL_FUNC_ADD);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glDisable(GL_CULL_FACE);
-  glDisable(GL_DEPTH_TEST);
-  glEnable(GL_SCISSOR_TEST);
-
-  // Setup viewport, orthographic projection matrix
-  glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
-  const float ortho_projection[4][4] = {
-    {2.0f / io.DisplaySize.x, 0.0f, 0.0f, 0.0f},
-    {0.0f, 2.0f / -io.DisplaySize.y, 0.0f, 0.0f},
-    {0.0f, 0.0f, -1.0f, 0.0f},
-    {-1.0f, 1.0f, 0.0f, 1.0f},
-  };
-  extensions->glUseProgram(g_ShaderHandle);
-  extensions->glUniform1i(g_AttribLocationTex, 0);
-  extensions->glUniformMatrix4fv(g_AttribLocationProjMtx, 1, GL_FALSE,
-                                 &ortho_projection[0][0]);
-  extensions->glBindVertexArray(g_VaoHandle);
-
-  for (int n = 0; n < draw_data->CmdListsCount; n++) {
-    const ImDrawList* cmd_list          = draw_data->CmdLists[n];
-    const ImDrawIdx*  idx_buffer_offset = 0;
-
-    extensions->glBindBuffer(GL_ARRAY_BUFFER, g_VboHandle);
-    extensions->glBufferData(
-      GL_ARRAY_BUFFER,
-      (GLsizeiptr)cmd_list->VtxBuffer.Size * sizeof(ImDrawVert),
-      (const GLvoid*)cmd_list->VtxBuffer.Data, GL_STREAM_DRAW);
-
-    extensions->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ElementsHandle);
-    extensions->glBufferData(
-      GL_ELEMENT_ARRAY_BUFFER,
-      (GLsizeiptr)cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx),
-      (const GLvoid*)cmd_list->IdxBuffer.Data, GL_STREAM_DRAW);
-
-    for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++) {
-      const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-      if (pcmd->UserCallback) {
-        pcmd->UserCallback(cmd_list, pcmd);
-      } else {
-        glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
-        glScissor((int)pcmd->ClipRect.x, (int)(fb_height - pcmd->ClipRect.w),
-                  (int)(pcmd->ClipRect.z - pcmd->ClipRect.x),
-                  (int)(pcmd->ClipRect.w - pcmd->ClipRect.y));
-        glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount,
-                       sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT
-                                              : GL_UNSIGNED_INT,
-                       idx_buffer_offset);
-      }
-      idx_buffer_offset += pcmd->ElemCount;
-    }
-  }
+  imguiHandler.render(renderInfo);
 }
-
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ---------------- OLD IMPLEMENTATION
-// ------------------------------------------------------------------------------
-#if 0
-
-
-void
-ImGuiHandler::init()
-{
-
-  ImGuiIO& io = ImGui::GetIO();
-
-  // Keyboard mapping. ImGui will use those indices to peek into the
-  // io.KeyDown[] array.
-  io.KeyMap[ImGuiKey_Tab]        = ConvertedKey_Tab;
-  io.KeyMap[ImGuiKey_LeftArrow]  = ConvertedKey_Left;
-  io.KeyMap[ImGuiKey_RightArrow] = ConvertedKey_Right;
-  io.KeyMap[ImGuiKey_UpArrow]    = ConvertedKey_Up;
-  io.KeyMap[ImGuiKey_DownArrow]  = ConvertedKey_Down;
-  io.KeyMap[ImGuiKey_PageUp]     = ConvertedKey_PageUp;
-  io.KeyMap[ImGuiKey_PageDown]   = ConvertedKey_PageDown;
-  io.KeyMap[ImGuiKey_Home]       = ConvertedKey_Home;
-  io.KeyMap[ImGuiKey_End]        = ConvertedKey_End;
-  io.KeyMap[ImGuiKey_Delete]     = ConvertedKey_Delete;
-  io.KeyMap[ImGuiKey_Backspace]  = ConvertedKey_BackSpace;
-  io.KeyMap[ImGuiKey_Enter]      = ConvertedKey_Enter;
-  io.KeyMap[ImGuiKey_Escape]     = ConvertedKey_Escape;
-  io.KeyMap[ImGuiKey_A]          = osgGA::GUIEventAdapter::KeySymbol::KEY_A;
-  io.KeyMap[ImGuiKey_C]          = osgGA::GUIEventAdapter::KeySymbol::KEY_C;
-  io.KeyMap[ImGuiKey_V]          = osgGA::GUIEventAdapter::KeySymbol::KEY_V;
-  io.KeyMap[ImGuiKey_X]          = osgGA::GUIEventAdapter::KeySymbol::KEY_X;
-  io.KeyMap[ImGuiKey_Y]          = osgGA::GUIEventAdapter::KeySymbol::KEY_Y;
-  io.KeyMap[ImGuiKey_Z]          = osgGA::GUIEventAdapter::KeySymbol::KEY_Z;
-
-  // Build texture atlas
-  unsigned char* pixels;
-  int            width, height;
-  io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
-
-  // Create OpenGL texture
-  GLint last_texture;
-  glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
-  glGenTextures(1, &g_FontTexture);
-  glBindTexture(GL_TEXTURE_2D, g_FontTexture);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, width, height, 0, GL_ALPHA,
-               GL_UNSIGNED_BYTE, pixels);
-
-  // Store our identifier
-  io.Fonts->TexID = (void*)(intptr_t)g_FontTexture;
-
-  // Cleanup (don't clear the input data if you want to append new fonts later)
-  io.Fonts->ClearInputData();
-  io.Fonts->ClearTexData();
-  glBindTexture(GL_TEXTURE_2D, last_texture);
-
-  io.RenderDrawListsFn = ImGui_RenderDrawLists;
-}
-
-void
-ImGuiHandler::setCameraCallbacks(osg::Camera* theCamera)
-{
-
-  ImGuiDrawCallback* aPostDrawCallback = new ImGuiDrawCallback(*this);
-  theCamera->setPostDrawCallback(aPostDrawCallback);
-
-  ImGuiNewFrameCallback* aPreDrawCallback = new ImGuiNewFrameCallback(*this);
-  theCamera->setPreDrawCallback(aPreDrawCallback);
-}
-
-void
-ImGuiHandler::newFrame(osg::RenderInfo& theRenderInfo)
-{
-  if (!g_FontTexture) {
-    init();
-  }
-
-  ImGuiIO& io = ImGui::GetIO();
-
-  osg::Viewport* aViewport = theRenderInfo.getCurrentCamera()->getViewport();
-  io.DisplaySize           = ImVec2(aViewport->width(), aViewport->height());
-
-  double aCurrentTime =
-    theRenderInfo.getView()->getFrameStamp()->getSimulationTime();
-  io.DeltaTime =
-    g_Time > 0.0 ? (float)(aCurrentTime - g_Time) : (float)(1.0f / 60.0f);
-  g_Time = aCurrentTime;
-
-  for (int i = 0; i < 3; i++) {
-    io.MouseDown[i] = g_MousePressed[i];
-  }
-
-  io.MouseWheel = g_MouseWheel;
-  g_MouseWheel  = 0.0f;
-
-  ImGui::NewFrame();
-}
-
-void
-ImGuiHandler::render(osg::RenderInfo& /*theRenderInfo*/)
-{
-
-  if (m_callback) {
-    (*m_callback)();
-  }
-
-  ImGui::Render();
-}
-
-bool
-ImGuiHandler::handle(const osgGA::GUIEventAdapter& theEventAdapter,
-                     osgGA::GUIActionAdapter& /*theActionAdapter*/,
-                     osg::Object* /*theObject*/,
-                     osg::NodeVisitor* /*theNodeVisitor*/)
-{
-  const bool wantCapureMouse    = ImGui::GetIO().WantCaptureMouse;
-  const bool wantCapureKeyboard = ImGui::GetIO().WantCaptureKeyboard;
-  ImGuiIO&   io                 = ImGui::GetIO();
-
-  switch (theEventAdapter.getEventType()) {
-
-    case osgGA::GUIEventAdapter::KEYDOWN: {
-      const int c           = theEventAdapter.getKey();
-      const int special_key = ConvertFromOSGKey(c);
-      if (special_key > 0) {
-        assert(special_key < 512 && "ImGui KeysDown is an array of 512");
-        assert(special_key > 256 &&
-               "ASCII stop at 127, but we use the range [257, 511]");
-
-        io.KeysDown[special_key] = true;
-
-        io.KeyCtrl = io.KeysDown[ConvertedKey_LeftControl] ||
-                     io.KeysDown[ConvertedKey_RightControl];
-        io.KeyShift = io.KeysDown[ConvertedKey_LeftShift] ||
-                      io.KeysDown[ConvertedKey_RightShift];
-        io.KeyAlt = io.KeysDown[ConvertedKey_LeftAlt] ||
-                    io.KeysDown[ConvertedKey_RightAlt];
-        io.KeySuper = io.KeysDown[ConvertedKey_LeftSuper] ||
-                      io.KeysDown[ConvertedKey_RightSuper];
-      } else if (c > 0 && c < 0x10000) {
-        io.AddInputCharacter((unsigned short)c);
-      }
-      return wantCapureKeyboard;
-    }
-    case osgGA::GUIEventAdapter::KEYUP: {
-      const int c           = theEventAdapter.getKey();
-      const int special_key = ConvertFromOSGKey(c);
-      if (special_key > 0) {
-        assert(special_key < 512 && "ImGui KeysMap is an array of 512");
-        assert(special_key > 256 &&
-               "ASCII stop at 127, but we use the range [257, 511]");
-
-        io.KeysDown[special_key] = false;
-
-        io.KeyCtrl = io.KeysDown[ConvertedKey_LeftControl] ||
-                     io.KeysDown[ConvertedKey_RightControl];
-        io.KeyShift = io.KeysDown[ConvertedKey_LeftShift] ||
-                      io.KeysDown[ConvertedKey_RightShift];
-        io.KeyAlt = io.KeysDown[ConvertedKey_LeftAlt] ||
-                    io.KeysDown[ConvertedKey_RightAlt];
-        io.KeySuper = io.KeysDown[ConvertedKey_LeftSuper] ||
-                      io.KeysDown[ConvertedKey_RightSuper];
-      }
-      return wantCapureKeyboard;
-    }
-    case (osgGA::GUIEventAdapter::PUSH): {
-      ImGuiIO& io = ImGui::GetIO();
-      io.MousePos = ImVec2(theEventAdapter.getX(),
-                           io.DisplaySize.y - theEventAdapter.getY());
-      g_MousePressed[0] = true;
-      return wantCapureMouse;
-    }
-    case (osgGA::GUIEventAdapter::DRAG):
-    case (osgGA::GUIEventAdapter::MOVE): {
-      ImGuiIO& io = ImGui::GetIO();
-      io.MousePos = ImVec2(theEventAdapter.getX(),
-                           io.DisplaySize.y - theEventAdapter.getY());
-      return wantCapureMouse;
-    }
-    case (osgGA::GUIEventAdapter::RELEASE): {
-      g_MousePressed[0] = false;
-      return wantCapureMouse;
-    }
-    case (osgGA::GUIEventAdapter::SCROLL): {
-      g_MouseWheel = theEventAdapter.getScrollingDeltaY();
-      return wantCapureMouse;
-    }
-    default: {
-      return false;
-    }
-  }
-
-  return false;
-}
-#endif

@@ -11,24 +11,39 @@
 class ImGUIEventHandler : public osgGA::GUIEventHandler
 {
 private:
-  double time;
-  bool   mousePressed[3];
-  float  mouseWheel;
-  GLuint fontTexture;
-  bool   initialized;
+  double       time;
+  bool         mousePressed[3];
+  float        mouseWheel;
+  bool         initialized;
+  unsigned int contextID;
+
+private:
+  GLuint FontTexture;
+  GLuint ShaderHandle;
+  GLuint VertHandle;
+  GLuint FragHandle;
+  GLuint AttribLocationTex;
+  GLuint AttribLocationProjMtx;
+  GLuint AttribLocationPosition;
+  GLuint AttribLocationUV;
+  GLuint AttribLocationColor;
+  GLuint VboHandle;
+  GLuint VaoHandle;
+  GLuint ElementsHandle;
 
 protected:
   void initialize(osg::RenderInfo& renderInfo);
-  
+
 public:
   ImGUIEventHandler();
+  ~ImGUIEventHandler();
 
   void newFrame(osg::RenderInfo& renderInfo);
+  void render(osg::RenderInfo& renderInfo);
 
   bool handle(const osgGA::GUIEventAdapter& eventAdapter,
               osgGA::GUIActionAdapter& /*actionAdapter*/,
               osg::Object* /*object*/, osg::NodeVisitor* /*nodeVisitor*/);
-
 };
 
 class ImGUINewFrame : public osg::Camera::DrawCallback
@@ -49,12 +64,16 @@ public:
 
 class ImGUIRender : public osg::Camera::DrawCallback
 {
-public:
-  void operator()(osg::RenderInfo& /*renderInfo*/) const override;
+  ImGUIEventHandler& imguiHandler;
 
-  
-  //test
-  osg::ref_ptr<osg::Geode> root;
+public:
+  ImGUIRender(ImGUIEventHandler& imguiHandler)
+    : imguiHandler(imguiHandler)
+  {
+  }
+
+public:
+  void operator()(osg::RenderInfo& renderInfo) const override;
 };
 
 #endif /* SOLEIL__IMGUIHANDLER_H_ */

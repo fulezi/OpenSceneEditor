@@ -463,7 +463,7 @@ main(int argc, char** argv)
     model = new osg::MatrixTransform;
   }
 
-  // ose::PopUps.push_back("Welcome");
+// ose::PopUps.push_back("Welcome");
 
 #if 0 // TODO: Restore
   osg::ref_ptr<EditorGui> editorGui = new EditorGui;
@@ -493,7 +493,7 @@ main(int argc, char** argv)
     }
 
     osg::ref_ptr<osg::Camera> camera = new osg::Camera;
-    //camera->addChild(geode);
+    // camera->addChild(geode);
     root->addChild(camera);
 
     assert(camera.get() != nullptr);
@@ -524,7 +524,7 @@ main(int argc, char** argv)
     // camera->setProjectionMatrixAsOrtho(0.0f, width, height, 0.0f, -1.0f,
     // 1.0f);
     // TODO: Set camera viewport  via uniform
-    //camera->setProjectionMatrix(osg::Matrix::ortho2D(0.0, 1.0, 0.0, 1.0));
+    // camera->setProjectionMatrix(osg::Matrix::ortho2D(0.0, 1.0, 0.0, 1.0));
     camera->setProjectionMatrix(osg::Matrix::ortho2D(0.0, width, 0.0, height));
 
     camera->setName("ImGUI Camera");
@@ -562,14 +562,9 @@ main(int argc, char** argv)
     viewer.addEventHandler(imguiHandler);
     // camera->setEventCallback(imguiHandler);
     camera->setPreDrawCallback(new ImGUINewFrame{*imguiHandler});
-    osg::ref_ptr<ImGUIRender> pdc = new ImGUIRender;
+    osg::ref_ptr<ImGUIRender> pdc = new ImGUIRender{*imguiHandler};
     camera->setPostDrawCallback(pdc);
 
-    // TODO:  temp
-    pdc->setDataVariance( osg::Object::DYNAMIC );
-    pdc->root = new osg::Geode;
-    pdc->root->setDataVariance( osg::Object::DYNAMIC );
-    camera->addChild(pdc->root);
   } // End experimental
 #endif
 

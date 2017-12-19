@@ -39,7 +39,9 @@
 #include <osg/Geometry>
 #include <osgUtil/SmoothingVisitor>
 
+/* --- Create texture 3D from a list of texture 2D --- */
 
+/* --- Create texture 3D from a list of texture 2D --- */
 
 struct ProcessEventCallBack : public osg::NodeCallback
 {
@@ -114,6 +116,7 @@ public:
   }
 };
 
+#if 0 // TODO: Restore
 struct EditorGui : public ImGuiHandler::GuiCallback
 {
   osg::ref_ptr<osg::Node>  scene;
@@ -290,6 +293,8 @@ private:
   osg::ref_ptr<osgManipulator::Dragger> dragger;
 };
 
+#endif
+
 struct NameVisitor : public osg::NodeVisitor
 {
   std::string name;
@@ -460,17 +465,114 @@ main(int argc, char** argv)
 
   // ose::PopUps.push_back("Welcome");
 
+#if 0 // TODO: Restore
   osg::ref_ptr<EditorGui> editorGui = new EditorGui;
   editorGui->scene                  = model;
   editorGui->meta                   = meta;
 
   root->addChild(model);
   root->addChild(meta);
+#endif
 
   viewer.realize();
 
-  
 /** Experimental **/
+#if 1
+  {
+    // Test Material
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    {
+      osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D;
+      osg::ref_ptr<osg::Image>     image =
+        osgDB::readImageFile("/home/florian/Images/ZincRoseMouton.png");
+      texture->setImage(image);
+      osg::ref_ptr<osg::Drawable> quad = osg::createTexturedQuadGeometry(
+        osg::Vec3(), osg::Vec3(1.0f, 0.0f, 0.0f), osg::Vec3(0.0f, 1.0f, 0.0f));
+      quad->getOrCreateStateSet()->setTextureAttributeAndModes(0, texture);
+      geode->addDrawable(quad);
+    }
+
+    osg::ref_ptr<osg::Camera> camera = new osg::Camera;
+    //camera->addChild(geode);
+    root->addChild(camera);
+
+    assert(camera.get() != nullptr);
+
+    viewer.realize();
+
+    // TODO: glPushAttrib(..., ->GL_TRANSFORM_BIT<-);
+    camera->setClearMask(GL_DEPTH_BUFFER_BIT |
+                         GL_COLOR_BUFFER_BIT); // TODO: Remove
+    camera->setRenderOrder(osg::Camera::POST_RENDER);
+    camera->setReferenceFrame(osg::Camera::ABSOLUTE_RF);
+
+    camera->setCullingActive(false);
+    camera->setAllowEventFocus(false);
+
+    const auto  viewport = viewer.getCamera()->getViewport();
+    const float width    = viewport->width();
+    const float height =
+      viewport->height(); // TODO: Implement them from viewportSize
+    const float zoom = 1.0f;
+    // osg::Matrix orthoView;
+    // orthoView.makeOrtho(2.0f / x, 0.0f, 2.0f / y, 0.0f, -1.0f, 1.0f);
+    // camera->setViewMatrix(orthoView);
+    // camera->setProjectionMatrixAsOrtho(-width / 2.0 * zoom, width / 2.0 *
+    // zoom,
+    //                                    -height / 2.0 * zoom,
+    //                                    height / 2.0 * zoom, -1.0, 100);
+    // camera->setProjectionMatrixAsOrtho(0.0f, width, height, 0.0f, -1.0f,
+    // 1.0f);
+    // TODO: Set camera viewport  via uniform
+    //camera->setProjectionMatrix(osg::Matrix::ortho2D(0.0, 1.0, 0.0, 1.0));
+    camera->setProjectionMatrix(osg::Matrix::ortho2D(0.0, width, 0.0, height));
+
+    camera->setName("ImGUI Camera");
+
+    // osg::GraphicsOperation* renderer =
+    //   dynamic_cast<osg::GraphicsOperation*>(camera->getRenderer());
+    // assert(renderer);
+
+    // TODO: float    fb_heigh = io.DisplaySize.y *
+    // io.DisplayFramebufferScale.y;
+    // TODO: draw_data->ScaleClipRects(io.DisplayFramebufferScale);
+
+    osg::StateSet*                    states = camera->getOrCreateStateSet();
+    osg::ref_ptr<osg::StateAttribute> blend =
+      new osg::BlendFunc(osg::BlendFunc::BlendFuncMode::SRC_ALPHA,
+                         osg::BlendFunc::BlendFuncMode::ONE_MINUS_SRC_ALPHA);
+    states->setAttribute(blend);
+
+    states->setAttribute(
+      new osg::BlendEquation(osg::BlendEquation::Equation::FUNC_ADD));
+
+    states->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+    states->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
+    states->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
+    states->setMode(GL_SCISSOR_TEST, osg::StateAttribute::ON);
+    states->setMode(GL_BLEND, osg::StateAttribute::ON);
+    osg::ref_ptr<osg::PolygonMode> pm = new osg::PolygonMode;
+    pm->setMode(osg::PolygonMode::FRONT_AND_BACK, osg::PolygonMode::FILL);
+    states->setAttribute(pm);
+
+    //----------------------------------------------------
+    // Setup of the ImGUI
+
+    osg::ref_ptr<ImGUIEventHandler> imguiHandler = new ImGUIEventHandler;
+    viewer.addEventHandler(imguiHandler);
+    // camera->setEventCallback(imguiHandler);
+    camera->setPreDrawCallback(new ImGUINewFrame{*imguiHandler});
+    osg::ref_ptr<ImGUIRender> pdc = new ImGUIRender;
+    camera->setPostDrawCallback(pdc);
+
+    // TODO:  temp
+    pdc->setDataVariance( osg::Object::DYNAMIC );
+    pdc->root = new osg::Geode;
+    pdc->root->setDataVariance( osg::Object::DYNAMIC );
+    camera->addChild(pdc->root);
+  } // End experimental
+#endif
+
 #if 0
   osg::Vec3 eye, center, up;
   {
@@ -494,9 +596,10 @@ main(int argc, char** argv)
     animNode->playAnimation(anim);
   }
 #endif
+
 /** Experimental **/
 
-#if 1
+#if 0
   root->addUpdateCallback(new ProcessEventCallBack);
   // FPP version of ImGUIL
   osg::ref_ptr<ImGuiHandler> handler = new ImGuiHandler(editorGui);

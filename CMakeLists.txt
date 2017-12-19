@@ -5,12 +5,15 @@ project(OpenSceneEditor)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -W -Wall -Wextra")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(OpenSceneGraph REQUIRED osg osgDB osgUtil osgViewer osgGA osgManipulator osgAnimation )
+
+# set(OSG_DIR /home/florian/jeux/OpenSceneGraph/build/INST)
+find_package(OpenSceneGraph REQUIRED osg osgDB osgUtil osgViewer osgGA osgManipulator osgAnimation ) # NO_CMAKE_PATH # osgDB osgUtil
 
 find_package(OpenGL REQUIRED)
 
 include_directories (SYSTEM
   ${OPENGL_INCLUDE_DIR}
+  # assimp/build/INST/include
   )
 
 
@@ -38,5 +41,8 @@ add_executable(OpenSceneEditor
 target_link_libraries(OpenSceneEditor
   ${OPENSCENEGRAPH_LIBRARIES}
   ${OPENGL_LIBRARIES}
+  # /home/florian/cppworkspace/OpenSceneEditor/assimp/build/INST/lib/libassimp.a
+  # /home/florian/cppworkspace/OpenSceneEditor/assimp/build/INST/lib/libzlibstatic.a
+  # /home/florian/cppworkspace/OpenSceneEditor/assimp/build/INST/lib/libIrrXML.a
   )
 

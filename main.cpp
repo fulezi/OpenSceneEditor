@@ -74,7 +74,7 @@ GetNodeByType(osg::Node& root)
 }
 
 static osg::ref_ptr<osg::Node> scene;
-static ose::Selection selection;
+static ose::Selection          selection;
 
 static void
 drawUI(void)
@@ -90,7 +90,12 @@ drawUI(void)
           tinyfd_saveFileDialog("Save File", "", 2, lFilterPatterns, nullptr);
 
         if (lTheOpenFileName) {
-          osgDB::writeNodeFile(*scene, lTheOpenFileName);
+          osg::ref_ptr<osg::Node> ref = selection.getSelection();
+          if (not ref) {
+	    // TODO: Need to be a node?
+            ref = scene;
+          }
+          osgDB::writeNodeFile(*ref, lTheOpenFileName);
         }
       }
       ImGui::EndMenu();
@@ -112,25 +117,23 @@ drawUI(void)
     ImGui::EndMainMenuBar();
   }
 
-  // ImGui::Begin("Object Property");
-  // {
-  //   osg::ref_ptr<osg::Node> ref = selection.getSelection();
-  //   if (ref) {
-  //     ose::widgetObject(*ref.get());
-  //   }
-  // }
-  // ImGui::End();
+  ImGui::Begin("Scene Graph");
 
+  ose::sceneTree(*scene, selection);
 
-    ImGui::Begin("Scene Graph");
+  ImGui::Separator();
 
-    ose::sceneTree(*scene, selection);
+  ImGui::End();
 
-    ImGui::Separator();
+  ImGui::Begin("Object Property");
+  {
+    osg::ref_ptr<osg::Node> ref = selection.getSelection();
+    if (ref) {
+      ose::widgetObject(*ref);
+    }
+  }
+  ImGui::End();
 
-    ImGui::End();
-
-  
   ImGui::ShowTestWindow(nullptr);
 }
 

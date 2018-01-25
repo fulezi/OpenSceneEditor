@@ -88,78 +88,24 @@ namespace ose {
       return name;
     }();
 
-    bool       selected = selection.isItMe(&node);
+    const bool selected = selection.isItMe(&node);
     const bool nodeOpen = ImGui::TreeNodeEx(
-      name.c_str(), selected ? ImGuiTreeNodeFlags_Selected : 0);
+      name.c_str(),
+      (selected ? ImGuiTreeNodeFlags_Selected : 0) |
+        (node.asGroup() != nullptr ? ImGuiTreeNodeFlags_DefaultOpen
+                                   : ImGuiTreeNodeFlags_Leaf) |
+        ImGuiTreeNodeFlags_OpenOnArrow);
     if (ImGui::IsItemClicked()) {
       // Currently one selection
-      selection.select(&node);
-      EventManager::Instance.emit("Node::Selected");
-      selected = true;
-    }
-
-#if 0
-    if (selected && selection.isAGroup()) {
-      if (ImGui::Button("Add..")) ImGui::OpenPopup("Pouet");
-
-      if (ImGui::BeginPopup("Pouet")) {
-        if (ImGui::MenuItem("Import")) {
-          osg::ref_ptr<osg::Group> group = node.asGroup();
-          assert(group);
-
-          auto import = [group]() {
-            char const* lTheOpenFileName;
-
-            lTheOpenFileName =
-              tinyfd_openFileDialog("Open File", "", 0, nullptr, nullptr, 0);
-
-            if (lTheOpenFileName) {
-              // TODO: Error
-              // tinyfd_messageBox("Error", "Open file name is NULL", "ok",
-              // "error",
-              //                   1);
-              auto model = osgDB::readNodeFile(lTheOpenFileName);
-              if (model) {
-                assert(group);
-
-                group->addChild(model);
-                EventManager::Instance.emit("Node::Imported");
-
-              } else {
-                PopUps.push_back(toString("Failed to import file: '",
-                                          lTheOpenFileName, "'\n\n"));
-              }
-            }
-          };
-
-          EventManager::Instance.delay(import);
-
-        } else if (ImGui::MenuItem("Add Group")) {
-          osg::ref_ptr<osg::Group> group = node.asGroup();
-          assert(group);
-          EventManager::Instance.delay(
-            [group]() { group->addChild(new osg::Group); });
-        } else if (ImGui::MenuItem("Add MatrixTransform")) {
-          osg::ref_ptr<osg::Group> group = node.asGroup();
-          assert(group);
-          EventManager::Instance.delay(
-            [group]() { group->addChild(new osg::MatrixTransform); });
-        } else if (ImGui::MenuItem("Add Camera")) {
-          osg::ref_ptr<osg::Group> group = node.asGroup();
-          assert(group);
-          EventManager::Instance.delay([group]() {
-            osg::ref_ptr<osg::Camera> camera = new osg::Camera;
-            camera->setClearMask(GL_DEPTH_BUFFER_BIT);
-            camera->setRenderOrder(osg::Camera::POST_RENDER);
-	    
-            group->addChild(camera);
-          });
-        }
-
-        ImGui::EndPopup();
+      if (selected) {
+        selection.select(nullptr);
+      } else {
+        selection.select(&node);
       }
+      EventManager::Instance.emit("Node::Selected");
+
+      // selected = !selected;
     }
-#endif
 
     if (nodeOpen) {
       traverse(node);

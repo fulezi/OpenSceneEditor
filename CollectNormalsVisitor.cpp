@@ -35,7 +35,7 @@ namespace ose {
 
         osg::Matrix world = osg::computeWorldToLocal(this->getNodePath());
         for (unsigned int it = 0; it < vertices->size(); ++it) {
-          const osg::Vec3& lineBegin = world * (*vertices)[it];
+          const osg::Vec3& lineBegin = (*vertices)[it] * world;
           const osg::Vec3& lineEnd   = lineBegin + (*normals)[it] * magnitude;
 
           normalList.push_back(lineBegin);

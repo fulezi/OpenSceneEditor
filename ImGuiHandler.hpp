@@ -1,6 +1,7 @@
 #ifndef SOLEIL__IMGUIHANDLER_H_
 #define SOLEIL__IMGUIHANDLER_H_
 
+#include <functional>
 #include <iostream>
 #include <osg/Camera>
 #include <osgGA/GUIEventHandler>
@@ -16,6 +17,8 @@ private:
   float        mouseWheel;
   bool         initialized;
   unsigned int contextID;
+
+  std::function<void(void)> drawui;
 
 private:
   GLuint FontTexture;
@@ -35,7 +38,8 @@ protected:
   void initialize(osg::RenderInfo& renderInfo);
 
 public:
-  ImGUIEventHandler();
+  ImGUIEventHandler(
+    std::function<void(void)> drawui = std::function<void(void)>());
   ~ImGUIEventHandler();
 
   void newFrame(osg::RenderInfo& renderInfo);

@@ -19,13 +19,6 @@
 
 #include <iterator>
 
-// static GLuint g_FontTexture  = 0;
-// static int    g_ShaderHandle = 0, g_VertHandle = 0, g_FragHandle = 0;
-// static int    g_AttribLocationTex = 0, g_AttribLocationProjMtx = 0;
-// static int    g_AttribLocationPosition = 0, g_AttribLocationUV = 0,
-//            g_AttribLocationColor = 0;
-// static unsigned int g_VboHandle = 0, g_VaoHandle = 0, g_ElementsHandle = 0;
-
 //////////////////////////////////////////////////////////////////////////////
 // Imporant Note: Dear ImGui expects the control Keys indices not to be	    //
 // greater thant 511. It actually uses an array of 512 elements. However,   //
@@ -101,11 +94,12 @@ ConvertFromOSGKey(int key)
   return -1;
 }
 
-ImGUIEventHandler::ImGUIEventHandler()
+ImGUIEventHandler::ImGUIEventHandler(std::function<void(void)> drawui)
   : time(0.0)
   , mousePressed{false, false, false}
   , mouseWheel(0.0)
   , initialized(false)
+  , drawui(drawui)
 {
 }
 
@@ -169,9 +163,11 @@ ImGUIEventHandler::newFrame(osg::RenderInfo& renderInfo)
 
   ImGui::NewFrame();
 
-  // TODO: Remove:
-  bool show_test_window = true;
-  ImGui::ShowTestWindow(&show_test_window);
+  if (drawui) {
+    drawui();
+  } else {
+    ImGui::ShowTestWindow(nullptr);
+  }
 }
 
 void
@@ -244,6 +240,7 @@ ImGUIEventHandler::render(osg::RenderInfo& renderInfo)
       idx_buffer_offset += pcmd->ElemCount;
     }
   }
+  extensions->glUseProgram(0);
 }
 
 bool

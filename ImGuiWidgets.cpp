@@ -98,6 +98,7 @@ namespace ose {
       selected = true;
     }
 
+#if 0
     if (selected && selection.isAGroup()) {
       if (ImGui::Button("Add..")) ImGui::OpenPopup("Pouet");
 
@@ -158,6 +159,7 @@ namespace ose {
         ImGui::EndPopup();
       }
     }
+#endif
 
     if (nodeOpen) {
       traverse(node);

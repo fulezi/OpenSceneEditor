@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 # set(OSG_DIR /home/florian/jeux/OpenSceneGraph/build/INST)
-find_package(OpenSceneGraph REQUIRED osg osgDB osgUtil osgViewer osgGA osgManipulator osgAnimation ) # NO_CMAKE_PATH # osgDB osgUtil
+find_package(OpenSceneGraph REQUIRED osg osgDB osgUtil osgViewer osgGA osgManipulator osgAnimation osgParticle) # NO_CMAKE_PATH # osgDB osgUtil
 
 find_package(OpenGL REQUIRED)
 
@@ -35,6 +35,7 @@ add_executable(OpenSceneEditor
   Utils.cpp
   EventManager.cpp
   CollectNormalsVisitor.cpp
+  GeometryUtils.cpp
   )
 
 

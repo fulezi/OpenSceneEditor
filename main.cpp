@@ -14,6 +14,7 @@
 #include <osgManipulator/TabBoxTrackballDragger>
 #include <osgManipulator/TrackballDragger>
 #include <osgManipulator/TranslateAxisDragger>
+#include <osgParticle/ParticleSystemUpdater>
 #include <osgViewer/ViewerEventHandlers>
 
 #include <osg/BlendEquation>
@@ -27,6 +28,7 @@
 
 #include "CollectNormalsVisitor.hpp"
 #include "EventManager.hpp"
+#include "GeometryUtils.h"
 #include "ImGuiHandler.hpp"
 #include "ImGuiWidgets.hpp"
 #include "Utils.hpp"
@@ -73,8 +75,8 @@ GetNodeByType(osg::Node& root)
   return v.found;
 }
 
-static osg::ref_ptr<osg::Node> scene;
-static ose::Selection          selection;
+static osg::ref_ptr<osg::Group> scene;
+static ose::Selection           selection;
 
 static void
 drawUI(void)
@@ -92,11 +94,34 @@ drawUI(void)
         if (lTheOpenFileName) {
           osg::ref_ptr<osg::Node> ref = selection.getSelection();
           if (not ref) {
-	    // TODO: Need to be a node?
+            // TODO: Need to be a node?
             ref = scene;
           }
           osgDB::writeNodeFile(*ref, lTheOpenFileName);
         }
+      }
+      ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Model")) {
+      if (ImGui::MenuItem("Explode")) {
+        // osg::ref_ptr<osg::Geometry> geom = nullptr;
+        // osg::ref_ptr<osg::Node>     ref  = selection.getSelection();
+        // if (ref) {
+        //   geom = ref->asGeometry();
+        // }
+        // if (geom == nullptr) {
+        //   ImGui::OpenPopup("CannotExplode");
+        //   ImGui::Text("Only working when a osg::Geometry is selected");
+        //   if (ImGui::BeginPopup("CannotExplode")) {
+        //     ImGui::EndPopup();
+        //   }
+        // } else {
+        // std::cout << "BOOOOOOOOOOOOOOOOOOOOOOOOUUUUNM"
+        //           << "\n";
+        // scene->addChild(Soleil::ExplodeGeometry(*geom));
+        // Soleil::ExplodeGeometry(*geom);
+        // }
+        Soleil::ExplodeGeometry();
       }
       ImGui::EndMenu();
     }
@@ -146,13 +171,14 @@ main(int argc, char** argv)
   osg::ref_ptr<osg::MatrixTransform> root = new osg::MatrixTransform;
 
   char const* fileToOpen;
-  char const* filterPatterns[3] = {"*.osgt", "*.osgb", "*.osg"}; // TODO: array
+  char const* filterPatterns[4] = {"*.osgt", "*.osgb", "*.osg",
+                                   "*.3ds"}; // TODO: array
 
   if (argc == 2) {
     fileToOpen = argv[1];
   } else {
     fileToOpen =
-      tinyfd_openFileDialog("Open File", "", 3, filterPatterns, NULL, 0);
+      tinyfd_openFileDialog("Open File", "", 4, filterPatterns, NULL, 0);
   }
 
   osg::ref_ptr<osg::Group> model;
@@ -180,9 +206,11 @@ main(int argc, char** argv)
     }
 #endif
 
+#if 0
     ose::CollectNormalsVisitor c;
     model->accept(c);
     root->addChild(c.toNormalsGeomtery(osg::Vec4(1.0f, 0.0f, 0.0f, 1.0f)));
+#endif
 
   } else {
     std::cout << "Empty init"
@@ -191,6 +219,7 @@ main(int argc, char** argv)
   }
 
   scene = model;
+  Soleil::MeshSetLineMode(*scene);
   root->addChild(model);
 
   viewer.realize();
@@ -211,6 +240,26 @@ main(int argc, char** argv)
     camera->setPostDrawCallback(new ImGUIRender{*imguiHandler});
 
   } // End experimental
+#endif
+
+#if 1
+  {
+    osg::ref_ptr<osg::Node> particle = Soleil::ExplodeGeometry();
+    //root->addChild(particle);
+    root->addChild(particle);
+  }
+#elif 0
+  {
+    gna osgParticle::ParticleSystem* ps1 =
+      Soleil::create_simple_particle_system(root);
+
+    osgParticle::ParticleSystemUpdater* psu =
+      new osgParticle::ParticleSystemUpdater;
+    psu->addParticleSystem(ps1);
+
+    // add the updater node to the scene graph
+    root->addChild(psu);
+  }
 #endif
 
   viewer.setSceneData(root);

@@ -192,7 +192,7 @@ ImGUIEventHandler::render(osg::RenderInfo& renderInfo)
   glDisable(GL_CULL_FACE);
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_SCISSOR_TEST);
-
+  
   // Setup viewport, orthographic projection matrix
   glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
   const float ortho_projection[4][4] = {

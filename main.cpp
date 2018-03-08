@@ -6,6 +6,7 @@
 #include <osg/Camera>
 #include <osg/NodeCallback>
 #include <osg/Switch>
+#include <osg/io_utils>
 #include <osgAnimation/BasicAnimationManager>
 #include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
@@ -27,7 +28,8 @@
 #include <osg/RenderInfo>
 
 #include "CollectNormalsVisitor.hpp"
-#include "EventManager.hpp"
+#include "EventManager.h"
+#include "EventNodeSelected.h"
 #include "GeometryUtils.h"
 #include "ImGuiHandler.hpp"
 #include "ImGuiWidgets.hpp"
@@ -75,7 +77,45 @@ GetNodeByType(osg::Node& root)
   return v.found;
 }
 
+/* --- Draggers --- */
+class Draggers : public osg::Switch
+{
+public:
+  Draggers();
+
+public:
+  void activateTrackball(osg::Transform&);
+
+private:
+  enum Childre
+  {
+    Trackball
+  };
+};
+
+Draggers::Draggers()
+{
+  setNewChildDefaultValue(false);
+
+  osg::ref_ptr<osgManipulator::Dragger> dragger(
+    new osgManipulator::TrackballDragger());
+  dragger->setupDefaultGeometry();
+  addChild(dragger);
+}
+
+void
+Draggers::activateTrackball(osg::Transform&)
+{
+  // setAllChildrenOff();
+  // setValue(Trackball, true);
+
+  this->setSingleChildOn(Trackball);
+}
+
+/* --- Draggers --- */
+
 static osg::ref_ptr<osg::Group> scene;
+static osg::ref_ptr<Draggers>   draggers;
 static ose::Selection           selection;
 
 static void
@@ -162,6 +202,15 @@ drawUI(void)
   ImGui::ShowTestWindow(nullptr);
 }
 
+class ProcessEventCallback : public osg::Callback
+{
+  bool run(osg::Object* object, osg::Object* data) override
+  {
+    Soleil::EventManager::ProcessEvents();
+    return traverse(object, data);
+  }
+};
+
 int
 main(int argc, char** argv)
 {
@@ -169,6 +218,7 @@ main(int argc, char** argv)
   osgViewer::Viewer viewer;
 
   osg::ref_ptr<osg::MatrixTransform> root = new osg::MatrixTransform;
+  draggers                                = new Draggers;
 
   char const* fileToOpen;
   char const* filterPatterns[4] = {"*.osgt", "*.osgb", "*.osg",
@@ -219,8 +269,8 @@ main(int argc, char** argv)
   }
 
   scene = model;
-  Soleil::MeshSetLineMode(*scene);
   root->addChild(model);
+  root->addChild(draggers);
 
   viewer.realize();
 
@@ -242,31 +292,39 @@ main(int argc, char** argv)
   } // End experimental
 #endif
 
-#if 1
-  {
-    osg::ref_ptr<osg::Node> particle = Soleil::ExplodeGeometry();
-    //root->addChild(particle);
-    root->addChild(particle);
-  }
-#elif 0
-  {
-    gna osgParticle::ParticleSystem* ps1 =
-      Soleil::create_simple_particle_system(root);
-
-    osgParticle::ParticleSystemUpdater* psu =
-      new osgParticle::ParticleSystemUpdater;
-    psu->addParticleSystem(ps1);
-
-    // add the updater node to the scene graph
-    root->addChild(psu);
-  }
-#endif
-
   viewer.setSceneData(root);
 
-  // osg::ref_ptr<osgGA::TrackballManipulator> m = new
-  // osgGA::TrackballManipulator;
-  // viewer.setCameraManipulator(m);
+  Soleil::EventManager::Init();
 
-  return viewer.run();
+  Soleil::EventManager::Enroll(
+    ose::EventNodeSelected::Type(), [](Soleil::Event& e) {
+      // TODO: A static method that assert
+      auto selected = static_cast<ose::EventNodeSelected*>(&e);
+
+      
+      const auto&       bounds = selected->node->getBound();
+      const float       scale  = bounds.radius();
+      const osg::Matrix mat    = osg::Matrix::scale(scale, scale, scale) *
+                              osg::computeLocalToWorld(selected->nodePath);
+      // dragger->setMatrix(mat);
+    });
+
+  osg::ref_ptr<osgGA::TrackballManipulator> m = new osgGA::TrackballManipulator;
+  viewer.setCameraManipulator(m);
+
+  // Soleil::EventManager::Emit(
+  //   std::make_shared<ose::EventNodeSelected>(model, osg::NodePath()));
+
+  // root->setDataVariance(osg::Object::DataVariance::DYNAMIC);
+
+  root->addUpdateCallback(new ProcessEventCallback);
+
+  // return viewer.run();
+  while (!viewer.done()) {
+    viewer.frame();
+
+    // Update events
+    // Soleil::EventManager::ProcessEvents();
+  }
+  return 0;
 }
